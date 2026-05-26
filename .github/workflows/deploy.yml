@@ -6,12 +6,21 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build:
-    name: Build React + Node Full-Stack Bundle
+  build_and_deploy:
+    name: Build & Deploy React App to Pages
     runs-on: ubuntu-latest
 
     steps:
@@ -30,7 +39,29 @@ jobs:
       - name: Run Typings Verification & Linter
         run: npm run lint
 
-      - name: Build production bundle (client + server)
+      - name: Build production bundle
         run: npm run build
         env:
           NODE_ENV: production
+
+      # Step 1: Deploy to the 'gh-pages' branch (highly robust fallback)
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+
+      # Step 2: Upload compiled artifacts for modern GitHub Actions page deployment
+      - name: Setup Pages Configuration
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: actions/deploy-pages@v4

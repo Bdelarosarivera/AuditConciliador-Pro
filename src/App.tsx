@@ -56,6 +56,18 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [currentFileBase64, setCurrentFileBase64] = useState<string | null>(null);
 
+  // Local/Direct Gemini configuration for static hosts (GitHub Pages)
+  const [clientApiKey, setClientApiKey] = useState(() => {
+    return localStorage.getItem("GEMINI_CLIENT_API_KEY") || "";
+  });
+  const [showKeyInput, setShowKeyInput] = useState(false);
+
+  const handleSaveApiKey = (key: string) => {
+    localStorage.setItem("GEMINI_CLIENT_API_KEY", key);
+    setClientApiKey(key.trim());
+    addToast(key ? "Clave API de Gemini guardada localmente." : "Clave API de Gemini eliminada.", "info");
+  };
+
   // Time metrics check
   const [utcTime, setUtcTime] = useState("");
   useEffect(() => {
@@ -201,8 +213,127 @@ export default function App() {
           throw new Error(body.error || "Fallo procesando el documento.");
         }
       } catch (backendError) {
-        console.warn("Backend API unavailable or error. Triggering intelligent client-side fallback...", backendError);
+        console.warn("Backend API unavailable or error. Checking client-side API Key alternative...", backendError);
         
+        const clientSavedKey = localStorage.getItem("GEMINI_CLIENT_API_KEY") || "";
+        if (clientSavedKey) {
+          try {
+            setProgressPercent(90);
+            setProgressText("Estableciendo conexión segura con Google Gemini (Llave del Cliente)...");
+            
+            const ocrPrompt = `Actúa como un experto en OCR y auditoría de inventario. Examina este documento de inventario y extrae todos los artículos en forma de tabla.
+Por favor, asegúrate de:
+1. Identificar columnas clave: Código, Descripción/Artículo, Unidad, Cantidad Física (Físico), Stock Teórico (Teórico), Costo Unitario en RD$ (Costo), Familia/Categoría del Producto y Clasificación (si no están, infiere la clasificación ABC basándote en que el tipo A son los más caros/importantes, B intermedios y C los de menor valor).
+2. Limpiar espacios extraños, caracteres erróneos, saltos de línea e inconsistencias métricas.
+3. Devolver un JSON bien estructurado que tenga un array de artículos.
+4. Identificar si el documento parece un escaneo/imagen (isScanned: true) o un PDF digital puro con texto seleccionable (isScanned: false).`;
+
+            let cleanedBase64 = base64Content;
+            let mimeType = "application/pdf";
+            const match = base64Content.match(/^data:(.*);base64,(.*)$/);
+            if (match) {
+              mimeType = match[1];
+              cleanedBase64 = match[2];
+            }
+
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${clientSavedKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [
+                  { parts: [{ inlineData: { mimeType, data: cleanedBase64 } }, { text: ocrPrompt }] }
+                ],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                      items: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            codigo: { type: "STRING" },
+                            descripcion: { type: "STRING" },
+                            unidad: { type: "STRING" },
+                            fisico: { type: "NUMBER" },
+                            teorico: { type: "NUMBER" },
+                            costo: { type: "NUMBER" },
+                            familia: { type: "STRING" },
+                            clasificacion: { type: "STRING" }
+                          },
+                          required: ["codigo", "descripcion", "fisico", "teorico", "costo"]
+                        }
+                      },
+                      isScanned: { type: "BOOLEAN" }
+                    },
+                    required: ["items", "isScanned"]
+                  }
+                }
+              })
+            });
+
+            if (!response.ok) {
+              const errInfo = await response.json().catch(() => ({}));
+              throw new Error(errInfo.error?.message || `Error con API Gemini (${response.status})`);
+            }
+
+            const resJson = await response.json();
+            const responseText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+            const parsedObj = JSON.parse(responseText.trim());
+            const rawExtracted = parsedObj.items || [];
+            const clientIsScanned = !!parsedObj.isScanned;
+
+            const processedItems = rawExtracted.map((item: any, idx: number) => {
+              const fisico = Number(item.fisico) || 0;
+              const teorico = Number(item.teorico) || 0;
+              const diferencia = fisico - teorico;
+              const costo = Number(item.costo) || 0;
+              const diferenciaRD = diferencia * costo;
+
+              return {
+                id: `sku-direct-${idx + 1}`,
+                codigo: (item.codigo || `SKU-${1000 + idx}`).toString().trim(),
+                descripcion: (item.descripcion || `Artículo ${idx + 1}`).trim(),
+                unidad: (item.unidad || "Und").trim(),
+                fisico,
+                teorico,
+                diferencia,
+                costo,
+                diferenciaRD,
+                familia: (item.familia || "General").trim(),
+                clasificacion: ["A", "B", "C"].includes(item.clasificacion) ? item.clasificacion : costo > 5000 ? "A" : costo > 1000 ? "B" : "C",
+                usuario: "Auditor Local Directo",
+                fecha: new Date().toISOString().split("T")[0],
+              };
+            });
+
+            const localSummary = calculateSummaryMetrics(processedItems);
+            const localReport = compileReportTextMetrics(processedItems, localSummary);
+
+            setProgressPercent(100);
+            setProgressText("Petición a Gemini concluida con éxito.");
+            await sleep(300);
+
+            setItems(processedItems);
+            setOriginalItems(JSON.parse(JSON.stringify(processedItems)));
+            setSummary(localSummary);
+            setReport(localReport);
+            setSelectedFile({
+              name: name || "reconciliacion_inventario.pdf",
+              sizeText: sizeStr || "1.5 MB",
+              totalPages: Math.ceil(processedItems.length / 10) || 1,
+            });
+            setProcessState("finalized");
+            setActiveTab("dashboard");
+            addToast(`OCR Directo: ${processedItems.length} SKUs reales extraídos de tu PDF con éxito.`, "success");
+            return;
+          } catch (directError: any) {
+            console.error("Direct key failed, moving to mockup fallback", directError);
+            addToast(`Clave Gemini falló: ${directError.message || directError}`, "error");
+          }
+        }
+
         // Execute dynamic client-side compilation
         setProgressPercent(100);
         setProgressText("Concluido con éxito (Motor Autónomo Local).");
@@ -228,8 +359,8 @@ export default function App() {
         setActiveTab("dashboard");
 
         addToast(
-          "Modo Autónomo Activo. Auditoría e informes procesados con éxito localmente.",
-          "success"
+          "Servidor ausente (GitHub Pages). Se cargó un ejemplo del rubro coincidente.",
+          "warning"
         );
       }
     } catch (err: any) {
@@ -288,22 +419,79 @@ export default function App() {
   };
 
   const handlePickedFile = (file: File) => {
-    if (file.type !== "application/pdf") {
-      addToast("Solo se admiten documentos en formato PDF corporativo.", "error");
+    const isPDF = file.name.endsWith(".pdf") || file.type === "application/pdf";
+    const isCSV = file.name.endsWith(".csv") || file.type === "text/csv";
+    const isTXT = file.name.endsWith(".txt") || file.type === "text/plain";
+
+    if (!isPDF && !isCSV && !isTXT) {
+      addToast("Solo se admiten documentos en formato PDF, CSV o TXT de inventario.", "error");
       return;
     }
 
     const sizeStr = (file.size / (1024 * 1024)).toFixed(2) + " MB";
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const b64 = uploadEvent.target?.result as string;
-      setCurrentFileBase64(b64);
-      processPipeline(b64, file.name, sizeStr, false, "general");
-    };
-    reader.onerror = () => {
-      addToast("Fallo la lectura binaria del archivo.", "error");
-    };
-    reader.readAsDataURL(file);
+
+    if (isCSV || isTXT) {
+      const reader = new FileReader();
+      setProcessState("uploading");
+      setProgressPercent(30);
+      setProgressText("Cargando y decodificando archivo de datos regional...");
+      
+      reader.onload = async (uploadEvent) => {
+        try {
+          setProgressPercent(70);
+          setProgressText("Procesando columnas y calculando discrepancias (RD$)...");
+          await sleep(500);
+
+          const text = uploadEvent.target?.result as string;
+          const parsedItems = parseClientSideCSV(text);
+
+          if (parsedItems.length === 0) {
+            throw new Error("No se detectaron filas de inventario válidas o con el formato correcto.");
+          }
+
+          const localSummary = calculateSummaryMetrics(parsedItems);
+          const localReport = compileReportTextMetrics(parsedItems, localSummary);
+
+          setProgressPercent(100);
+          setProgressText("Concluido con éxito.");
+          await sleep(200);
+
+          setItems(parsedItems);
+          setOriginalItems(JSON.parse(JSON.stringify(parsedItems)));
+          setSummary(localSummary);
+          setReport(localReport);
+          setSelectedFile({
+            name: file.name,
+            sizeText: sizeStr,
+            totalPages: 1,
+          });
+          setProcessState("finalized");
+          setActiveTab("dashboard");
+          addToast(`Archivo procesado directamente en el navegador: ${parsedItems.length} SKUs cargados de forma real.`, "success");
+        } catch (err: any) {
+          setProcessState("error");
+          addToast(`Error leyendo archivo: ${err.message}`, "error");
+        }
+      };
+      
+      reader.onerror = () => {
+        setProcessState("error");
+        addToast("Fallo la lectura física del archivo.", "error");
+      };
+      reader.readAsText(file, "UTF-8");
+    } else {
+      // Standard PDF flow
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const b64 = uploadEvent.target?.result as string;
+        setCurrentFileBase64(b64);
+        processPipeline(b64, file.name, sizeStr, false, "general");
+      };
+      reader.onerror = () => {
+        addToast("Fallo la lectura binaria del archivo.", "error");
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Direct Excel workbook API trigger
@@ -542,21 +730,51 @@ export default function App() {
         </div>
 
         {/* System parameters */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/20 space-y-2 text-[10px] font-mono text-slate-400">
-          <div className="flex items-center justify-between">
-            <span>Servicio:</span>
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block"></span>
-              LINEA-OK
-            </span>
+        <div className="p-4 border-t border-slate-800/80 bg-slate-950/25 space-y-3">
+          <span className="text-[9px] uppercase font-bold tracking-widest text-slate-500 block">
+            Servidor & Claves API
+          </span>
+          {showKeyInput ? (
+            <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+              <label className="text-[9px] text-slate-300 font-extrabold uppercase tracking-wider block">Llave de Gemini API</label>
+              <input
+                type="password"
+                placeholder="Pegar clave AI..."
+                value={clientApiKey}
+                onChange={(e) => handleSaveApiKey(e.target.value)}
+                className="w-full text-xs font-mono bg-slate-950 border border-slate-700/80 rounded p-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-400"
+              />
+              <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                Su clave se guarda localmente en su propio explorador para habilitar el motor OCR real en GitHub Pages sin servidor remoto.
+              </p>
+              <button
+                onClick={() => setShowKeyInput(false)}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold py-1 cursor-pointer transition-colors font-sans"
+              >
+                Cerrar Configuración
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowKeyInput(true)}
+              className="w-full flex items-center justify-between p-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-lg text-[10px] font-bold text-slate-300 cursor-pointer transition-all font-sans"
+            >
+              <span className="flex items-center gap-1.5">🔑 Gemini API Key</span>
+              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${clientApiKey ? "bg-emerald-950 text-emerald-400 border border-emerald-900" : "bg-indigo-950 text-indigo-400 border border-indigo-900"}`}>
+                {clientApiKey ? "CONECTADA" : "CONFIGURAR"}
+              </span>
+            </button>
+          )}
+
+          <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Ubicación base:</span>
+              <span>Rep. Dominicana</span>
+            </div>
+            <p className="text-[10px] text-slate-500 pt-1 text-center font-sans">
+              Diseño Premium SAP Partner
+            </p>
           </div>
-          <div className="flex items-center justify-between">
-            <span>Ubicación base:</span>
-            <span>Rep. Dominicana</span>
-          </div>
-          <p className="text-[10px] text-slate-500 pt-1 text-center">
-            Diseño Premium SAP Partner
-          </p>
         </div>
       </aside>
 
@@ -662,6 +880,31 @@ export default function App() {
           {/* Idle Screen: Upload Document area */}
           {processState === "idle" && items.length === 0 && (
             <div className="space-y-6">
+              
+              {/* GitHub Pages Host Informational Notice */}
+              <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-4 flex gap-3 text-xs text-amber-900 leading-relaxed shadow-3xs">
+                <AlertOctagon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-extrabold uppercase tracking-wider text-amber-950 text-[11px] flex items-center gap-1.5">
+                    <span>Aviso de Ejecución (Deploy en GitHub Pages)</span>
+                  </h4>
+                  <p>
+                    GitHub Pages funciona de manera estática y <strong>no ejecuta ambientes de fondo (backends) activos</strong> de Node/Express de forma remota. Por eso, al subir un PDF real sin un servidor activo, el sistema de demostración genera un set de datos de muestra para ilustrar la interfaz.
+                  </p>
+                  <p className="font-bold text-amber-950 pt-1">
+                    💡 ¡Tienes dos alternativas excepcionales para auditar tu información real hoy mismo en este enlace!
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>
+                      <strong>Carga archivos CSV o archivos de texto (.txt):</strong> Estos se decodifican y procesan 100% en tiempo real directamente en tu navegador mediante nuestro motor local de Javascript, calculando discrepancias al instante.
+                    </li>
+                    <li>
+                      <strong>Conecta tu propia Gemini API Key:</strong> Puedes configurar tu propia llave gratuita en el extremo inferior del menú lateral izquierdo. Esto habilitará el OCR inteligente del PDF real directamente desde la ventana de tu navegador de manera segura.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
               {/* Massive styled Dropzone panel */}
               <div
                 onDragEnter={handleDrag}
@@ -680,7 +923,7 @@ export default function App() {
                   id="pdf-upload-file-picker"
                   ref={fileInputRef}
                   onChange={handleFileChange}
-                  accept=".pdf"
+                  accept=".pdf,.csv,.txt"
                   className="hidden"
                 />
 
@@ -690,22 +933,22 @@ export default function App() {
 
                 <div className="space-y-1.5 max-w-sm">
                   <h3 className="text-sm font-extrabold text-gray-800 uppercase tracking-wider group-hover:text-indigo-600">
-                    Cargar Acta de Inventario Físico
+                    Cargar Acta de Inventario
                   </h3>
                   <p className="text-xs text-gray-500 leading-relaxed font-sans">
-                    Arrastra y suelta tu archivo PDF o <span className="text-indigo-600 font-bold underline">búscalo localmente</span>. Soportado para formatos estructurados, escaneos de campo o firmas registradas.
+                    Arrastra y suelta tu archivo <strong className="text-slate-700">PDF, CSV o TXT</strong> o <span className="text-indigo-600 font-bold underline">búscalo localmente</span>. Soportado para conciliaciones físicas de almacén y hojas estructuradas.
                   </p>
                 </div>
 
                 <div className="pt-2">
                   <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-950 text-white rounded-lg text-xs font-semibold shadow-3xs group-hover:bg-slate-800 transition-colors inline-block">
-                    Seleccionar PDF
+                    Seleccionar Archivo
                   </span>
                 </div>
 
                 <div className="text-[10px] text-gray-400 font-mono tracking-wide pt-4 border-t border-gray-50 w-full max-w-xs justify-center flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Automatizado con Gemini 3.5-Flash</span>
+                  <span>Automatizado con Gemini 3.5-Flash & Motor Directo</span>
                 </div>
               </div>
 
@@ -742,7 +985,7 @@ export default function App() {
                     type="file"
                     ref={fileInputRef}
                     onChange={handleFileChange}
-                    accept=".pdf"
+                    accept=".pdf,.csv,.txt"
                     className="hidden"
                   />
                   
@@ -750,10 +993,10 @@ export default function App() {
                   <button
                     onClick={onTriggerFilePicker}
                     className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="Cargar un nuevo archivo PDF"
+                    title="Cargar un nuevo archivo (PDF, CSV, TXT)"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    <span>Cargar PDF</span>
+                    <span>Cargar Archivo</span>
                   </button>
 
                   {/* Descargar Excel trigger */}
@@ -1134,4 +1377,114 @@ function generateClientMockDataset(type: string): InventoryItem[] {
       fecha: new Date().toISOString().split("T")[0],
     };
   });
+}
+
+function parseClientSideCSV(text: string): InventoryItem[] {
+  const lines = text.split(/\r?\n/);
+  const itemsList: InventoryItem[] = [];
+  
+  // Find separator (comma or semicolon)
+  let separator = ",";
+  if (lines[0] && lines[0].includes(";")) {
+    separator = ";";
+  } else if (lines[0] && lines[0].includes("\t")) {
+    separator = "\t";
+  }
+
+  let startIndex = 0;
+  // Let's analyze lines to find a row that looks like numbers/text or headers
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    const cols = lines[i].split(separator);
+    const hasNumbers = cols.some(col => !isNaN(Number(col.trim())) && col.trim() !== "");
+    if (hasNumbers) {
+      startIndex = i;
+      break;
+    } else if (lines[i].toLowerCase().includes("código") || lines[i].toLowerCase().includes("codigo") || lines[i].toLowerCase().includes("sku")) {
+      startIndex = i + 1;
+      break;
+    }
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // split ignoring separators inside quotes
+    const cols: string[] = [];
+    let insideQuote = false;
+    let current = "";
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      if (char === '"') {
+        insideQuote = !insideQuote;
+      } else if (char === separator && !insideQuote) {
+        cols.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    cols.push(current.trim());
+
+    if (cols.length < 3) continue;
+
+    const rawCodigo = cols[0] || "";
+    // Clean up quotes
+    const codigo = rawCodigo.replace(/^"|"$/g, "").trim() || `SKU-${1000 + i}`;
+    const descripcion = (cols[1] || "").replace(/^"|"$/g, "").trim() || `Artículo ${i + 1}`;
+    
+    let fisico = 0;
+    let teorico = 0;
+    let costo = 0;
+    let unidad = "Und";
+    let familia = "General";
+    
+    // Simple heuristic parser
+    if (cols.length >= 6) {
+      fisico = parseFloat(cols[3].replace(/[^0-9.-]/g, "")) || 0;
+      teorico = parseFloat(cols[4].replace(/[^0-9.-]/g, "")) || 0;
+      costo = parseFloat(cols[5].replace(/[^0-9.-]/g, "")) || 0;
+      unidad = cols[2].replace(/^"|"$/g, "").trim() || "Und";
+      if (cols[6]) {
+        familia = cols[6].replace(/^"|"$/g, "").trim();
+      }
+    } else {
+      // Find numeric columns
+      const numbers: number[] = [];
+      cols.forEach(c => {
+        const num = parseFloat(c.replace(/[^0-9.-]/g, ""));
+        if (!isNaN(num)) numbers.push(num);
+      });
+      if (numbers.length >= 3) {
+        fisico = numbers[0];
+        teorico = numbers[1];
+        costo = numbers[2];
+      } else if (numbers.length === 2) {
+        fisico = numbers[0];
+        teorico = numbers[1];
+        costo = 100; // default RD$100
+      }
+    }
+
+    const diferencia = fisico - teorico;
+    const diferenciaRD = diferencia * costo;
+
+    itemsList.push({
+      id: `local-sku-${i + 1}`,
+      codigo,
+      descripcion,
+      unidad,
+      fisico,
+      teorico,
+      diferencia,
+      costo,
+      diferenciaRD,
+      familia,
+      clasificacion: (costo > 5000 ? "A" : costo > 1000 ? "B" : "C") as 'A' | 'B' | 'C',
+      usuario: "Auditor Local Directo",
+      fecha: new Date().toISOString().split("T")[0],
+    });
+  }
+
+  return itemsList;
 }

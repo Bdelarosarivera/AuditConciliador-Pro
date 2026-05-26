@@ -1292,10 +1292,12 @@ function compileReportTextMetrics(items: InventoryItem[], summary: AuditSummary)
     : "No se identificó ningún impacto sectorizado crítico.";
 
   const recommendationsList = [
-    "Programar conteos cíclicos semanales para productos con clasificación de alta rotación 'Clase-A'.",
-    "Auditar el proceso de recepción y despacho físico para mitigar errores de digitación o mermas.",
-    "Revisar el acoplamiento de registros en tiempo real en la base de datos de SAP/sistema ERP.",
-    "Establecer capacitaciones especializadas para operadores de almacén en sistemas de trazabilidad por lote y SKU.",
+    "Auditar y supervisar el proceso de Recepcion, hasta garantizar que todos los recepcionista cumplan con el mismo",
+    "Programar conteos cíclicos mensuales para articulos con clasificación de alta rotación 'Clase-A'.",
+    "Supervisar el proceso de despacho garantizando el escaneo correcto para mitigar errores de entrega.",
+    "Revisar la organizacion e identificacion de articulo en almacen.",
+    "Mantener la actualización de ubicaciones en almacén para mantener la rastreabilidad del articulo en sistema ERP",
+    "Establecer capacitaciones especializadas para recepcion y despachadores.",
   ];
 
   if (summary.confiabilidad < 90) {

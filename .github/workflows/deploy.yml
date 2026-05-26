@@ -1,0 +1,36 @@
+name: Build & Deploy AuditConciliador Pro
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: Build React + Node Full-Stack Bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Typings Verification & Linter
+        run: npm run lint
+
+      - name: Build production bundle (client + server)
+        run: npm run build
+        env:
+          NODE_ENV: production

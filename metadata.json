@@ -1,0 +1,8 @@
+{
+  "name": "AuditConciliador Pro",
+  "description": "Plataforma corporativa de auditoría, conciliación y OCR de inventario con análisis predictivo, reportes ejecutivos e indicadores de confiabilidad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Information about authenticated users and their roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "Auditor", "Supervisor", "Viewer"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "suspended"] }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt", "status"]
+    },
+    "Audit": {
+      "title": "Inventory Audit",
+      "description": "Header for a specific stocktake reconciliation run.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "auditName": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "pdfUrl": { "type": "string" },
+        "excelUrl": { "type": "string" },
+        "totalItems": { "type": "number" },
+        "inventoryAccuracy": { "type": "number" },
+        "differenceValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "approved", "finalized"] },
+        "processingTime": { "type": "number" },
+        "warehouse": { "type": "string" },
+        "summary": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["auditName", "uploadedBy", "uploadedAt", "status", "summary", "createdAt"]
+    },
+    "InventoryItem": {
+      "title": "Reconciled SKU Profile",
+      "description": "A single stock item audited during a counting session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "family": { "type": "string" },
+        "classification": { "type": "string", "enum": ["A", "B", "C"] },
+        "physical": { "type": "number" },
+        "theoretical": { "type": "number" },
+        "difference": { "type": "number" },
+        "cost": { "type": "number" },
+        "differenceRD": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "description", "classification", "physical", "theoretical", "cost", "difference", "differenceRD", "createdAt"]
+    },
+    "Report": {
+      "title": "Executive Summary",
+      "description": "An automated high-level insight summary generated for an audit.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "auditId": { "type": "string" },
+        "generatedBy": { "type": "string" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "reportUrl": { "type": "string" },
+        "executiveSummary": { "type": "string" },
+        "recommendations": { "type": "array" }
+      },
+      "required": ["auditId", "generatedBy", "generatedAt", "executiveSummary", "recommendations"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles with regional details and custom claims."
+    },
+    "/audits/{auditId}": {
+      "schema": { "$ref": "#/entities/Audit" },
+      "description": "Main index of audit history with KPIs."
+    },
+    "/audits/{auditId}/inventoryItems/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Granular SKUs associated with a particular stocktake audit."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Accompanying executive brief containing recommendations and financial impact assessments."
+    }
+  }
+}

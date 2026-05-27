@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Role Fetching (Auth tokens do not have claims by default; fetch from /users/{userId})
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isUserActive() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().status == 'active';
+    }
+
+    function hasAdminRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'Admin';
+    }
+
+    function hasAuditorRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserData().role == 'Auditor' || getUserData().role == 'Admin' || getUserData().role == 'Supervisor');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Rules ---
+    
+    // User Profile
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt', 'status'])
+        && data.keys().size() == 6
+        && data.uid is string && data.uid.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.email is string && data.email.size() <= 200
+        && data.role in ['Admin', 'Auditor', 'Supervisor', 'Viewer']
+        && data.createdAt is string
+        && data.status in ['active', 'suspended'];
+    }
+
+    // Audit Header
+    function isValidAudit(data) {
+      return data.keys().hasAll(['auditName', 'uploadedBy', 'uploadedAt', 'status', 'summary', 'createdAt'])
+        && data.auditName is string && data.auditName.size() <= 200
+        && data.uploadedBy is string && data.uploadedBy.size() <= 128
+        && data.uploadedBy == request.auth.uid
+        && data.status in ['draft', 'approved', 'finalized']
+        && data.summary is map
+        && data.createdAt is string;
+    }
+
+    // Inventory Item
+    function isValidInventoryItem(data) {
+      return data.keys().hasAll(['code', 'description', 'classification', 'physical', 'theoretical', 'cost', 'difference', 'differenceRD', 'createdAt'])
+        && data.code is string && data.code.size() <= 100
+        && data.description is string && data.description.size() <= 500
+        && data.classification in ['A', 'B', 'C']
+        && data.physical is number
+        && data.theoretical is number
+        && data.cost is number
+        && data.difference is number
+        && data.differenceRD is number
+        && data.createdAt is string;
+    }
+
+    // Executive Report
+    function isValidReport(data) {
+      return data.keys().hasAll(['auditId', 'generatedBy', 'generatedAt', 'executiveSummary', 'recommendations'])
+        && data.auditId is string && data.auditId.size() <= 128
+        && data.generatedBy is string && data.generatedBy.size() <= 128
+        && data.generatedBy == request.auth.uid
+        && data.executiveSummary is string && data.executiveSummary.size() <= 10000
+        && data.recommendations is list;
+    }
+
+    // --- Path Matching ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if hasAdminRole();
+      
+      // Creating is allowed for Google auth initial login (they self-register with default role)
+      allow create: if isSignedIn() && isValidId(userId) && isOwner(userId) && isValidUser(incoming()) 
+                     && incoming().role == 'Viewer' && incoming().status == 'active';
+                     
+      // Updating profile
+      allow update: if isSignedIn() && isValidId(userId) && isOwner(userId) && isValidUser(incoming())
+                     && incoming().role == existing().role // Role cannot be changed by oneself
+                     && incoming().status == existing().status // Status cannot be changed by oneself
+                     && incoming().createdAt == existing().createdAt;
+
+      // Admin has full control
+      allow write: if hasAdminRole() && isValidId(userId) && isValidUser(incoming());
+    }
+
+    match /audits/{auditId} {
+      allow get: if isSignedIn() && isValidId(auditId);
+      allow list: if isSignedIn();
+
+      allow create: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidAudit(incoming());
+
+      // Only auditors and admin can update audits. Status of audit cannot be modified under update if finalized unless Admin.
+      allow update: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidAudit(incoming())
+                    && (existing().status != 'finalized' || hasAdminRole())
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().uploadedBy == existing().uploadedBy;
+
+      allow delete: if hasAdminRole() && isValidId(auditId);
+    }
+
+    match /audits/{auditId}/inventoryItems/{itemId} {
+      allow get: if isSignedIn() && isValidId(auditId) && isValidId(itemId);
+      allow list: if isSignedIn() && isValidId(auditId);
+
+      // Inventory item creation is allowed if the parent audit exists and is editable
+      allow create: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId) 
+                    && exists(/databases/$(database)/documents/audits/$(auditId))
+                    && get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized'
+                    && isValidInventoryItem(incoming());
+
+      allow update: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId)
+                    && exists(/databases/$(database)/documents/audits/$(auditId))
+                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || hasAdminRole())
+                    && isValidInventoryItem(incoming());
+
+      allow delete: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId)
+                    && exists(/databases/$(database)/documents/audits/$(auditId))
+                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || hasAdminRole());
+    }
+
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId);
+      allow list: if isSignedIn();
+
+      allow create: if isUserActive() && hasAuditorRole() && isValidId(reportId) && isValidReport(incoming())
+                    && exists(/databases/$(database)/documents/audits/$(incoming().auditId));
+
+      allow update: if isUserActive() && hasAuditorRole() && isValidId(reportId) && isValidReport(incoming())
+                    && incoming().auditId == existing().auditId;
+
+      allow delete: if hasAdminRole() && isValidId(reportId);
+    }
+  }
+}

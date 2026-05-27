@@ -20,7 +20,11 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Layers,
-  Sparkles
+  Sparkles,
+  CloudUpload,
+  LogOut,
+  ShieldCheck,
+  History
 } from "lucide-react";
 import { InventoryItem, AuditSummary, ExecutiveReport, ProcessingState } from "./types";
 import KPICards from "./components/KPICards";
@@ -28,11 +32,18 @@ import GaugeChart from "./components/GaugeChart";
 import ExecutiveReportPanel from "./components/ExecutiveReportPanel";
 import InteractiveTable from "./components/InteractiveTable";
 import DemoPresets from "./components/DemoPresets";
+import { useAuth } from "./context/AuthContext";
+import { AuthInterface } from "./components/AuthInterface";
+import { saveAuditToCloud, saveExecutiveReportToCloud } from "./services/firebaseService";
+import HistoryPanel from "./components/HistoryPanel";
 
 export default function App() {
+  const { currentUser, userProfile, logout } = useAuth();
+  const [savingToCloud, setSavingToCloud] = useState(false);
+
   // Sidebar states
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "table" | "report" | "presets">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "table" | "report" | "presets" | "history">("dashboard");
 
   // App core states
   const [processState, setProcessState] = useState<ProcessingState>("idle");
@@ -88,6 +99,86 @@ export default function App() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 5000);
+  };
+
+  // Firebase Firestore saving trigger
+  const handleSaveToCloud = async () => {
+    if (items.length === 0 || !summary) {
+      addToast("No existen SKUs de arqueo o discrepancias cargadas en memoria.", "error");
+      return;
+    }
+    setSavingToCloud(true);
+    addToast("Empaquetando documentos y conectando con Firebase en tiempo real...", "info");
+
+    try {
+      // compile excel blob
+      let excelBlob: Blob | null = null;
+      try {
+        const response = await fetch("/api/export-excel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items,
+            summary,
+            report,
+            title: selectedFile?.name?.replace(".pdf", "")?.toUpperCase() || "RECONCILIACIÓN",
+          }),
+        });
+        if (response.ok) {
+          excelBlob = await response.blob();
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote excel stream, archiving dry schema.", err);
+      }
+
+      // decode base64 file blob if from PDF upload
+      let pdfBlob: Blob | null = null;
+      if (currentFileBase64 && currentFileBase64.startsWith("data:")) {
+        const res = await fetch(currentFileBase64);
+        pdfBlob = await res.blob();
+      }
+
+      const auditTitle = selectedFile?.name || "Acta de Reconciliación Física";
+      const bodega = "Bodega Central SD";
+
+      const auditId = await saveAuditToCloud(
+        auditTitle,
+        bodega,
+        currentUser?.uid || "uid-anonimo",
+        userProfile?.name || currentUser?.displayName || currentUser?.email?.split("@")[0] || "Auditor Autorizado",
+        pdfBlob,
+        excelBlob,
+        items,
+        summary
+      );
+
+      if (report) {
+        await saveExecutiveReportToCloud(auditId, currentUser?.uid || "uid-anonimo", report);
+      }
+
+      addToast(`Sincronizado! Se creó la auditoría: "${auditTitle}" en Firestore con éxito.`, "success");
+      setActiveTab("history"); // Move them to history so they see their cloud rows instantly!
+    } catch (error: any) {
+      console.error(error);
+      addToast(`Error al sincronizar con Firestore: ${error.message || error}`, "error");
+    } finally {
+      setSavingToCloud(false);
+    }
+  };
+
+  const handleImportSavedAudit = (
+    fetchedItems: InventoryItem[],
+    fetchedSummary: AuditSummary,
+    fetchedReport: ExecutiveReport | null,
+    fileMetadata: { name: string; sizeText: string; totalPages: number }
+  ) => {
+    setItems(fetchedItems);
+    setOriginalItems(JSON.parse(JSON.stringify(fetchedItems)));
+    setSummary(fetchedSummary);
+    setReport(fetchedReport);
+    setSelectedFile(fileMetadata);
+    setProcessState("finalized");
+    setActiveTab("dashboard");
   };
 
   // Re-calculate math summary locally on-the-fly when user edits cells in the responsive table
@@ -581,6 +672,29 @@ Por favor, asegúrate de:
     fileInputRef.current?.click();
   };
 
+  // Auth gate checks
+  if (!currentUser) {
+    return <AuthInterface />;
+  }
+
+  if (userProfile?.status === "suspended") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-200 p-6 text-center">
+        <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse shrink-0" />
+        <h2 className="text-md font-black uppercase tracking-tight text-white mb-2">Acceso Corporativo Suspendido</h2>
+        <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+          Su cuenta asociada a <strong className="text-slate-200">{currentUser.email}</strong> ha sido suspendida por el Administrador de Auditoría Interna. Favor ponerse en contacto con seguridad.
+        </p>
+        <button
+          onClick={() => logout()}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+        >
+          Cerrar Sesión Activa
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex text-slate-900 font-sans selection:bg-indigo-500 selection:text-white transition-all overflow-x-hidden md:overflow-hidden md:h-screen">
       
@@ -645,16 +759,31 @@ Por favor, asegúrate de:
           </div>
 
           {/* Connected User Badge */}
-          <div className="p-4 mx-3 my-3 bg-slate-800/40 border border-slate-800/80 rounded-xl flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-900 font-extrabold text-xs">
-              AD
+          <div className="p-4 mx-3 my-3 bg-slate-800/40 border border-slate-800/80 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shrink-0 select-none uppercase shadow-inner">
+                {(userProfile?.name || currentUser.displayName || currentUser.email || "AU").substring(0, 2)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-slate-200 truncate leading-tight">
+                  {userProfile?.name || currentUser.displayName || "Usuario"}
+                </p>
+                <span className="text-[9px] font-extrabold text-indigo-400 uppercase tracking-widest mt-0.5 block truncate">
+                  {userProfile?.role || "Auditor"}
+                </span>
+                <span className="text-[8px] text-slate-500 font-mono block truncate">
+                  {currentUser.email}
+                </span>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-200 leading-none">Bartolo De La Rosa</p>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 inline-block">
-                Auditor Senior
-              </span>
-            </div>
+            
+            <button
+              onClick={() => logout()}
+              title="Cerrar sesión corporativa segura"
+              className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-red-400 rounded-lg shrink-0 cursor-pointer transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Navigation Segments */}
@@ -714,8 +843,18 @@ Por favor, asegúrate de:
 
             <div className="pt-4">
               <span className="px-3 py-1.5 text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">
-                Herramientas Demo
+                Herramientas Cloud
               </span>
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                  activeTab === "history" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                }`}
+              >
+                <History className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                <span>Historial de Auditorías</span>
+              </button>
+
               <button
                 onClick={() => setActiveTab("presets")}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
@@ -881,79 +1020,89 @@ Por favor, asegúrate de:
           {processState === "idle" && items.length === 0 && (
             <div className="space-y-6">
               
-              {/* GitHub Pages Host Informational Notice */}
-              <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-4 flex gap-3 text-xs text-amber-900 leading-relaxed shadow-3xs">
-                <AlertOctagon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="font-extrabold uppercase tracking-wider text-amber-950 text-[11px] flex items-center gap-1.5">
-                    <span>Aviso de Ejecución (Deploy en GitHub Pages)</span>
-                  </h4>
-                  <p>
-                    GitHub Pages funciona de manera estática y <strong>no ejecuta ambientes de fondo (backends) activos</strong> de Node/Express de forma remota. Por eso, al subir un PDF real sin un servidor activo, el sistema de demostración genera un set de datos de muestra para ilustrar la interfaz.
-                  </p>
-                  <p className="font-bold text-amber-950 pt-1">
-                    💡 ¡Tienes dos alternativas excepcionales para auditar tu información real hoy mismo en este enlace!
-                  </p>
-                  <ul className="list-disc pl-4 space-y-1">
-                    <li>
-                      <strong>Carga archivos CSV o archivos de texto (.txt):</strong> Estos se decodifican y procesan 100% en tiempo real directamente en tu navegador mediante nuestro motor local de Javascript, calculando discrepancias al instante.
-                    </li>
-                    <li>
-                      <strong>Conecta tu propia Gemini API Key:</strong> Puedes configurar tu propia llave gratuita en el extremo inferior del menú lateral izquierdo. Esto habilitará el OCR inteligente del PDF real directamente desde la ventana de tu navegador de manera segura.
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Massive styled Dropzone panel */}
-              <div
-                onDragEnter={handleDrag}
-                onDragOver={handleDrag}
-                onDragLeave={handleDrag}
-                onDrop={handleDrop}
-                onClick={onTriggerFilePicker}
-                className={`border-2 border-dashed rounded-2xl p-10 md:p-14 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-4 group min-h-[350px] ${
-                  dragActive 
-                    ? "border-indigo-500 bg-indigo-50/40 shadow-inner" 
-                    : "border-gray-200 bg-white hover:border-indigo-400 hover:shadow-xs"
-                }`}
-              >
-                <input
-                  type="file"
-                  id="pdf-upload-file-picker"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept=".pdf,.csv,.txt"
-                  className="hidden"
+              {/* Active Tab Logic Selector for Idle state */}
+              {activeTab === "history" ? (
+                <HistoryPanel 
+                  onLoadAuditToDashboard={handleImportSavedAudit} 
+                  addToast={addToast} 
                 />
+              ) : (
+                <>
+                  {/* GitHub Pages Host Informational Notice */}
+                  <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-4 flex gap-3 text-xs text-amber-900 leading-relaxed shadow-3xs">
+                    <AlertOctagon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <h4 className="font-extrabold uppercase tracking-wider text-amber-950 text-[11px] flex items-center gap-1.5">
+                        <span>Aviso de Ejecución (Deploy en GitHub Pages)</span>
+                      </h4>
+                      <p>
+                        GitHub Pages funciona de manera estática y <strong>no ejecuta ambientes de fondo (backends) activos</strong> de Node/Express de forma remota. Por eso, al subir un PDF real sin un servidor activo, el sistema de demostración genera un set de datos de muestra para ilustrar la interfaz.
+                      </p>
+                      <p className="font-bold text-amber-950 pt-1">
+                        💡 ¡Tienes dos alternativas excepcionales para auditar tu información real hoy mismo en este enlace!
+                      </p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li>
+                          <strong>Carga archivos CSV o archivos de texto (.txt):</strong> Estos se decodifican y procesan 100% en tiempo real directamente en tu navegador mediante nuestro motor local de Javascript, calculando discrepancias al instante.
+                        </li>
+                        <li>
+                          <strong>Conecta tu propia Gemini API Key:</strong> Puedes configurar tu propia llave gratuita en el extremo inferior del menú lateral izquierdo. Esto habilitará el OCR inteligente del PDF real directamente desde la ventana de tu navegador de manera segura.
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
 
-                <div className="p-4 bg-slate-50 border group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-2xl text-slate-400 transition-colors">
-                  <Upload className="w-10 h-10 stroke-[1.5]" />
-                </div>
+                  {/* Massive styled Dropzone panel */}
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                    onClick={onTriggerFilePicker}
+                    className={`border-2 border-dashed rounded-2xl p-10 md:p-14 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-4 group min-h-[350px] ${
+                      dragActive 
+                        ? "border-indigo-500 bg-indigo-50/40 shadow-inner" 
+                        : "border-gray-200 bg-white hover:border-indigo-400 hover:shadow-xs"
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      id="pdf-upload-file-picker"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".pdf,.csv,.txt"
+                      className="hidden"
+                    />
 
-                <div className="space-y-1.5 max-w-sm">
-                  <h3 className="text-sm font-extrabold text-gray-800 uppercase tracking-wider group-hover:text-indigo-600">
-                    Cargar Acta de Inventario
-                  </h3>
-                  <p className="text-xs text-gray-500 leading-relaxed font-sans">
-                    Arrastra y suelta tu archivo <strong className="text-slate-700">PDF, CSV o TXT</strong> o <span className="text-indigo-600 font-bold underline">búscalo localmente</span>. Soportado para conciliaciones físicas de almacén y hojas estructuradas.
-                  </p>
-                </div>
+                    <div className="p-4 bg-slate-50 border group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-2xl text-slate-400 transition-colors">
+                      <Upload className="w-10 h-10 stroke-[1.5]" />
+                    </div>
 
-                <div className="pt-2">
-                  <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-950 text-white rounded-lg text-xs font-semibold shadow-3xs group-hover:bg-slate-800 transition-colors inline-block">
-                    Seleccionar Archivo
-                  </span>
-                </div>
+                    <div className="space-y-1.5 max-w-sm">
+                      <h3 className="text-sm font-extrabold text-gray-800 uppercase tracking-wider group-hover:text-indigo-600">
+                        Cargar Acta de Inventario
+                      </h3>
+                      <p className="text-xs text-gray-500 leading-relaxed font-sans">
+                        Arrastra y suelta tu archivo <strong className="text-slate-700">PDF, CSV o TXT</strong> o <span className="text-indigo-600 font-bold underline">búscalo localmente</span>. Soportado para conciliaciones físicas de almacén y hojas estructuradas.
+                      </p>
+                    </div>
 
-                <div className="text-[10px] text-gray-400 font-mono tracking-wide pt-4 border-t border-gray-50 w-full max-w-xs justify-center flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Automatizado con Gemini 3.5-Flash & Motor Directo</span>
-                </div>
-              </div>
+                    <div className="pt-2">
+                      <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-950 text-white rounded-lg text-xs font-semibold shadow-3xs group-hover:bg-slate-800 transition-colors inline-block">
+                        Seleccionar Archivo
+                      </span>
+                    </div>
 
-              {/* Presets segment shown immediately when idle */}
-              <DemoPresets onLoadPreset={handleLoadPreset} isLoading={processState !== "idle"} />
+                    <div className="text-[10px] text-gray-400 font-mono tracking-wide pt-4 border-t border-gray-50 w-full max-w-xs justify-center flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Automatizado con Gemini 3.5-Flash & Motor Directo</span>
+                    </div>
+                  </div>
+
+                  {/* Presets segment shown immediately when idle */}
+                  <DemoPresets onLoadPreset={handleLoadPreset} isLoading={processState !== "idle"} />
+                </>
+              )}
             </div>
           )}
 
@@ -1007,6 +1156,17 @@ Por favor, asegúrate de:
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Descargar Excel</span>
+                  </button>
+
+                  {/* Guardar en Firebase Cloud trigger */}
+                  <button
+                    onClick={handleSaveToCloud}
+                    disabled={savingToCloud}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    title="Guardar arqueo de inventario y documentos originales en Firebase Cloud"
+                  >
+                    <CloudUpload className="w-3.5 h-3.5 animate-pulse" />
+                    <span>{savingToCloud ? "Sincronizando..." : "Guardar en la Nube"}</span>
                   </button>
 
                   {/* Reprocesar OCR trigger */}
@@ -1076,6 +1236,17 @@ Por favor, asegúrate de:
                 >
                   Reporte Directivo
                   {activeTab === "report" && (
+                    <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("history")}
+                  className={`pb-3 relative transition-all cursor-pointer ${
+                    activeTab === "history" ? "text-indigo-600" : "text-gray-400 hover:text-gray-600"
+                  }`}
+                >
+                  Historial Cloud
+                  {activeTab === "history" && (
                     <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />
                   )}
                 </button>
@@ -1176,6 +1347,14 @@ Por favor, asegúrate de:
               {/* Tab: Report */}
               {activeTab === "report" && (
                 <ExecutiveReportPanel report={report} />
+              )}
+
+              {/* Tab: File History */}
+              {activeTab === "history" && (
+                <HistoryPanel 
+                  onLoadAuditToDashboard={handleImportSavedAudit} 
+                  addToast={addToast} 
+                />
               )}
 
               {/* Tab: Presets */}
@@ -1292,12 +1471,10 @@ function compileReportTextMetrics(items: InventoryItem[], summary: AuditSummary)
     : "No se identificó ningún impacto sectorizado crítico.";
 
   const recommendationsList = [
-    "Auditar y supervisar el proceso de Recepcion, hasta garantizar que todos los recepcionista cumplan con el mismo",
-    "Programar conteos cíclicos mensuales para articulos con clasificación de alta rotación 'Clase-A'.",
-    "Supervisar el proceso de despacho garantizando el escaneo correcto para mitigar errores de entrega.",
-    "Revisar la organizacion e identificacion de articulo en almacen.",
-    "Mantener la actualización de ubicaciones en almacén para mantener la rastreabilidad del articulo en sistema ERP",
-    "Establecer capacitaciones especializadas para recepcion y despachadores.",
+    "Programar conteos cíclicos semanales para productos con clasificación de alta rotación 'Clase-A'.",
+    "Auditar el proceso de recepción y despacho físico para mitigar errores de digitación o mermas.",
+    "Revisar el acoplamiento de registros en tiempo real en la base de datos de SAP/sistema ERP.",
+    "Establecer capacitaciones especializadas para operadores de almacén en sistemas de trazabilidad por lote y SKU.",
   ];
 
   if (summary.confiabilidad < 90) {

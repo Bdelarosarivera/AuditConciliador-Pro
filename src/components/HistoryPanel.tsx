@@ -33,7 +33,7 @@ interface HistoryPanelProps {
 }
 
 export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: HistoryPanelProps) {
-  const { userProfile } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const [audits, setAudits] = useState<DBReviewAudit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,6 +42,9 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
   const [loadingAuditId, setLoadingAuditId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
     // Realtime Sync from Firestore
     const unsubscribe = subscribeToAudits(
       (data) => {
@@ -54,7 +57,7 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
 
   const handleDelete = async (auditId: string) => {
     if (userProfile?.role !== "Admin") {

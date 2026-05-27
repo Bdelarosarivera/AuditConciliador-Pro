@@ -1,10 +1,10 @@
 {
   "projectId": "auditconciliador-pro-a5b35",
-  "appId": "1:912630676888:web:e090aec02c440c386e3fed",
+  "appId": "1:912630676888:web:800a0ca464a2d3db6e3fed",
   "apiKey": "AIzaSyCFUI3zHs5g9yI4ntkJVdfTHG8mWN9raq8",
   "authDomain": "auditconciliador-pro-a5b35.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-d3fc6bb3-0873-4dba-982e-13c91b4e9aff",
   "storageBucket": "auditconciliador-pro-a5b35.firebasestorage.app",
   "messagingSenderId": "912630676888",
-  "measurementId": "G-CN444EV98G"
+  "measurementId": ""
 }

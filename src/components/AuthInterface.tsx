@@ -71,15 +71,42 @@ export function AuthInterface() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setErrorText("");
+    setInfoText("");
+    setSubmitting(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      console.error("Google login error:", err);
+      let translate = err.message || String(err);
+      
+      if (err.code === "auth/popup-blocked") {
+        translate = "Su navegador bloqueó la ventana emergente de Google. Por favor, habilite los permisos de 'popups' (ventanas emergentes) en la barra de direcciones de su navegador o intente abrir la aplicación en una pestaña nueva.";
+      } else if (err.code === "auth/unauthorized-domain" || translate.includes("auth/unauthorized-domain")) {
+        const currentDomain = window.location.hostname;
+        translate = `Error de Dominio Autorizado: El dominio "${currentDomain}" no está habilitado para autenticación de Google en su consola de Firebase. Por favor, vaya a su Consola de Firebase -> Authentication -> pestaña 'Settings' -> 'Authorized domains' y agregue "${currentDomain}" a la lista.`;
+      } else if (err.code === "auth/popup-closed-by-user") {
+        translate = "La ventana de Google fue cerrada antes de completar el inicio de sesión.";
+      } else {
+        translate = `Fallo en el inicio de sesión con Google: ${translate}. Recuerde habilitar Google como Proveedor de Acceso (Sign-in provider) y autorizar el dominio actual en la consola Firebase.`;
+      }
+      setErrorText(translate);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleForgotPassword = async () => {
     if (!email) {
       setErrorText("Escriba su correo primero para enviar el enlace de recuperación.");
       return;
     }
     setErrorText("");
+    setInfoText("");
     try {
       await resetPassword(email);
-      setInfoText("Enlace de restablecimiento enviado. Revise su bandeja de entrada.");
+      setInfoText("¡Enlace de restablecimiento enviado! Revise su correo. Nota: Filtros de seguridad de correo (como Outlook Safe Links o carpetas de Spam) pueden hacer clic automático e invalidar el enlace de uso único de Firebase. Si le genera un error de link expirado o usado, intente solicitarlo de nuevo, cópielo directamente sin abrirlo repetidas veces o use una ventana de incógnito.");
     } catch (err: any) {
       setErrorText(err.message || String(err));
     }
@@ -287,7 +314,7 @@ export function AuthInterface() {
           </div>
 
           <button
-            onClick={signInWithGoogle}
+            onClick={handleGoogleSignIn}
             disabled={submitting}
             className="w-full flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-200 font-bold py-2.5 rounded-lg text-xs transition-colors cursor-pointer"
           >

@@ -86,6 +86,8 @@ export function AuthInterface() {
       } else if (err.code === "auth/unauthorized-domain" || translate.includes("auth/unauthorized-domain")) {
         const currentDomain = window.location.hostname;
         translate = `Error de Dominio Autorizado: El dominio "${currentDomain}" no está habilitado para autenticación de Google en su consola de Firebase. Por favor, vaya a su Consola de Firebase -> Authentication -> pestaña 'Settings' -> 'Authorized domains' y agregue "${currentDomain}" a la lista.`;
+      } else if (err.code === "auth/operation-not-allowed" || translate.includes("auth/operation-not-allowed") || translate.includes("operation-not-allowed")) {
+        translate = "Error de Proveedor no Habilitado (auth/operation-not-allowed): Google está pre-configurado pero la activación aún no se ha guardado en Firebase. En la ventana que tiene abierta de Firebase, debe hacer clic en el botón azul 'Guardar' ubicado abajo a la derecha de la ventana para activarlo oficialmente.";
       } else if (err.code === "auth/popup-closed-by-user") {
         translate = "La ventana de Google fue cerrada antes de completar el inicio de sesión.";
       } else {

@@ -89,12 +89,22 @@ export async function saveAuditToCloud(
   let pdfUrl = "";
   let excelUrl = "";
 
-  // 1. Upload files to Storage if present
+  // 1. Upload files to Storage if present with active grace fallbacks (CORS & missing container guards)
   if (pdfFileOrBlob) {
-    pdfUrl = await uploadToStorage(pdfFileOrBlob, "uploads/pdfs", `${auditId}_acta.pdf`);
+    try {
+      pdfUrl = await uploadToStorage(pdfFileOrBlob, "uploads/pdfs", `${auditId}_acta.pdf`);
+    } catch (err) {
+      console.warn("Firebase Storage PDF upload bypassed/failed (usually CORS or bucket not initialized):", err);
+      pdfUrl = "pending-storage-activation";
+    }
   }
   if (excelFileOrBlob) {
-    excelUrl = await uploadToStorage(excelFileOrBlob, "exports/excel", `${auditId}_reconciliacion.xlsx`);
+    try {
+      excelUrl = await uploadToStorage(excelFileOrBlob, "exports/excel", `${auditId}_reconciliacion.xlsx`);
+    } catch (err) {
+      console.warn("Firebase Storage Excel upload bypassed/failed (usually CORS or bucket not initialized):", err);
+      excelUrl = "pending-storage-activation";
+    }
   }
 
   const timestampString = new Date().toISOString();

@@ -3,7 +3,7 @@
   "appId": "1:912630676888:web:e090aec02c440c386e3fed",
   "apiKey": "AIzaSyCFUI3zHs5g9yI4ntkJVdfTHG8mWN9raq8",
   "authDomain": "auditconciliador-pro-a5b35.firebaseapp.com",
-  "firestoreDatabaseId": "",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "auditconciliador-pro-a5b35.firebasestorage.app",
   "messagingSenderId": "912630676888",
   "measurementId": "G-CN444EV98G"

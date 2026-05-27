@@ -50,7 +50,7 @@ service cloud.firestore {
     // User Profile
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt', 'status'])
-        && data.keys().size() == 6
+        && data.keys().size() >= 6 && data.keys().size() <= 8
         && data.uid is string && data.uid.size() <= 128
         && data.name is string && data.name.size() <= 200
         && data.email is string && data.email.size() <= 200
@@ -102,7 +102,8 @@ service cloud.firestore {
       
       // Creating is allowed for Google auth initial login (they self-register with default role)
       allow create: if isSignedIn() && isValidId(userId) && isOwner(userId) && isValidUser(incoming()) 
-                     && incoming().role == 'Viewer' && incoming().status == 'active';
+                     && (incoming().role != 'Admin' || request.auth.token.email.lower() == 'bartolodelarosarivera@gmail.com')
+                     && incoming().status == 'active';
                      
       // Updating profile
       allow update: if isSignedIn() && isValidId(userId) && isOwner(userId) && isValidUser(incoming())
@@ -133,20 +134,21 @@ service cloud.firestore {
       allow get: if isSignedIn() && isValidId(auditId) && isValidId(itemId);
       allow list: if isSignedIn() && isValidId(auditId);
 
-      // Inventory item creation is allowed if the parent audit exists and is editable
+      // Inventory item creation is allowed if the parent audit exists and is editable,
+      // or if the parent audit was uploaded by the current user
       allow create: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId) 
                     && exists(/databases/$(database)/documents/audits/$(auditId))
-                    && get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized'
+                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || get(/databases/$(database)/documents/audits/$(auditId)).data.uploadedBy == request.auth.uid)
                     && isValidInventoryItem(incoming());
 
       allow update: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId)
                     && exists(/databases/$(database)/documents/audits/$(auditId))
-                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || hasAdminRole())
+                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || get(/databases/$(database)/documents/audits/$(auditId)).data.uploadedBy == request.auth.uid || hasAdminRole())
                     && isValidInventoryItem(incoming());
 
       allow delete: if isUserActive() && hasAuditorRole() && isValidId(auditId) && isValidId(itemId)
                     && exists(/databases/$(database)/documents/audits/$(auditId))
-                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || hasAdminRole());
+                    && (get(/databases/$(database)/documents/audits/$(auditId)).data.status != 'finalized' || get(/databases/$(database)/documents/audits/$(auditId)).data.uploadedBy == request.auth.uid || hasAdminRole());
     }
 
     match /reports/{reportId} {

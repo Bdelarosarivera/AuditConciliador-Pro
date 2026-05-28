@@ -733,186 +733,188 @@ Por favor, asegúrate de:
       {/* Corporate Left Sidebar */}
       <aside 
         className={`${
-          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full w-0"
-        } bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 border-r border-slate-800 transition-all duration-300 z-30 relative`}
+          sidebarOpen ? "w-64 opacity-100 border-r" : "w-0 opacity-0 pointer-events-none border-r-0"
+        } bg-slate-900 text-slate-100 flex flex-col shrink-0 border-slate-800 transition-all duration-300 z-30 relative overflow-hidden h-screen`}
       >
-        <div className="flex flex-col">
-          {/* Sidebar Header Brand */}
-          <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="p-2 bg-indigo-600 rounded-lg text-white shadow-2xs">
-                <FileSpreadsheet className="w-5 h-5" />
-              </span>
-              <div>
-                <h1 className="text-sm font-black tracking-tight leading-none text-white">
-                  AuditConciliador
-                </h1>
-                <span className="text-[10px] font-bold text-slate-400">CORPORATE SUITE v2.8</span>
+        <div className="w-64 h-full flex flex-col justify-between shrink-0">
+          <div className="flex flex-col">
+            {/* Sidebar Header Brand */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-indigo-600 rounded-lg text-white shadow-2xs">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </span>
+                <div>
+                  <h1 className="text-sm font-black tracking-tight leading-none text-white">
+                    AuditConciliador
+                  </h1>
+                  <span className="text-[10px] font-bold text-slate-400">CORPORATE SUITE v2.8</span>
+                </div>
               </div>
+              <button 
+                onClick={() => setSidebarOpen(false)}
+                className="md:hidden text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button 
-              onClick={() => setSidebarOpen(false)}
-              className="md:hidden text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
 
-          {/* Connected User Badge */}
-          <div className="p-4 mx-3 my-3 bg-slate-800/40 border border-slate-800/80 rounded-xl flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shrink-0 select-none uppercase shadow-inner">
-                {(userProfile?.name || currentUser.displayName || currentUser.email || "AU").substring(0, 2)}
+            {/* Connected User Badge */}
+            <div className="p-4 mx-3 my-3 bg-slate-800/40 border border-slate-800/80 rounded-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shrink-0 select-none uppercase shadow-inner">
+                  {(userProfile?.name || currentUser.displayName || currentUser.email || "AU").substring(0, 2)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-200 truncate leading-tight">
+                    {userProfile?.name || currentUser.displayName || "Usuario"}
+                  </p>
+                  <span className="text-[9px] font-extrabold text-indigo-400 uppercase tracking-widest mt-0.5 block truncate">
+                    {userProfile?.role || "Auditor"}
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-mono block truncate">
+                    {currentUser.email}
+                  </span>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-black text-slate-200 truncate leading-tight">
-                  {userProfile?.name || currentUser.displayName || "Usuario"}
-                </p>
-                <span className="text-[9px] font-extrabold text-indigo-400 uppercase tracking-widest mt-0.5 block truncate">
-                  {userProfile?.role || "Auditor"}
-                </span>
-                <span className="text-[8px] text-slate-500 font-mono block truncate">
-                  {currentUser.email}
-                </span>
-              </div>
+              
+              <button
+                onClick={() => logout()}
+                title="Cerrar sesión corporativa segura"
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-red-400 rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-            
-            <button
-              onClick={() => logout()}
-              title="Cerrar sesión corporativa segura"
-              className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-red-400 rounded-lg shrink-0 cursor-pointer transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
 
-          {/* Navigation Segments */}
-          <nav className="p-3 space-y-1 text-slate-300 text-xs">
-            <span className="px-3 py-1.5 text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">
-              Auditoría Activa
-            </span>
-            
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
-                activeTab === "dashboard" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                <span>Dashboard de Estado</span>
-              </div>
-              {summary && (
-                <span className="text-[9px] font-bold bg-indigo-900/60 text-indigo-200 px-1.5 py-0.5 rounded-full">
-                  {summary.confiabilidad}%
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("table")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
-                activeTab === "table" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <TableProperties className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                <span>Tabla de Ajustes</span>
-              </div>
-              {items.length > 0 && (
-                <span className="text-[9px] font-mono bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                  {items.length} SKUs
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("report")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
-                activeTab === "report" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <FilePieChart className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                <span>Informe Gerencial</span>
-              </div>
-              {report && (
-                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
-              )}
-            </button>
-
-            <div className="pt-4">
+            {/* Navigation Segments */}
+            <nav className="p-3 space-y-1 text-slate-300 text-xs">
               <span className="px-3 py-1.5 text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">
-                Herramientas Cloud
+                Auditoría Activa
               </span>
+              
               <button
-                onClick={() => setActiveTab("history")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
-                  activeTab === "history" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                onClick={() => setActiveTab("dashboard")}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                  activeTab === "dashboard" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
                 }`}
               >
-                <History className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                <span>Historial de Auditorías</span>
+                <div className="flex items-center gap-2.5">
+                  <LayoutDashboard className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                  <span>Dashboard de Estado</span>
+                </div>
+                {summary && (
+                  <span className="text-[9px] font-bold bg-indigo-900/60 text-indigo-200 px-1.5 py-0.5 rounded-full">
+                    {summary.confiabilidad}%
+                  </span>
+                )}
               </button>
 
               <button
-                onClick={() => setActiveTab("presets")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
-                  activeTab === "presets" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                onClick={() => setActiveTab("table")}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                  activeTab === "table" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
                 }`}
               >
-                <Layers className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                <span>Modelos Industriales</span>
+                <div className="flex items-center gap-2.5">
+                  <TableProperties className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                  <span>Tabla de Ajustes</span>
+                </div>
+                {items.length > 0 && (
+                  <span className="text-[9px] font-mono bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
+                    {items.length} SKUs
+                  </span>
+                )}
               </button>
-            </div>
-          </nav>
-        </div>
 
-        {/* System parameters */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/25 space-y-3">
-          <span className="text-[9px] uppercase font-bold tracking-widest text-slate-500 block">
-            Servidor & Claves API
-          </span>
-          {showKeyInput ? (
-            <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-              <label className="text-[9px] text-slate-300 font-extrabold uppercase tracking-wider block">Llave de Gemini API</label>
-              <input
-                type="password"
-                placeholder="Pegar clave AI..."
-                value={clientApiKey}
-                onChange={(e) => handleSaveApiKey(e.target.value)}
-                className="w-full text-xs font-mono bg-slate-950 border border-slate-700/80 rounded p-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-400"
-              />
-              <p className="text-[9px] text-slate-400 leading-normal font-sans">
-                Su clave se guarda localmente en su propio explorador para habilitar el motor OCR real en GitHub Pages sin servidor remoto.
+              <button
+                onClick={() => setActiveTab("report")}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                  activeTab === "report" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <FilePieChart className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                  <span>Informe Gerencial</span>
+                </div>
+                {report && (
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
+                )}
+              </button>
+
+              <div className="pt-4">
+                <span className="px-3 py-1.5 text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">
+                  Herramientas Cloud
+                </span>
+                <button
+                  onClick={() => setActiveTab("history")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                    activeTab === "history" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                  }`}
+                >
+                  <History className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                  <span>Historial de Auditorías</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("presets")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition-all group cursor-pointer ${
+                    activeTab === "presets" ? "bg-indigo-600/95 text-white shadow-3xs" : "hover:bg-slate-800"
+                  }`}
+                >
+                  <Layers className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                  <span>Modelos Industriales</span>
+                </button>
+              </div>
+            </nav>
+          </div>
+
+          {/* System parameters */}
+          <div className="p-4 border-t border-slate-800/80 bg-slate-950/25 space-y-3">
+            <span className="text-[9px] uppercase font-bold tracking-widest text-slate-500 block">
+              Servidor & Claves API
+            </span>
+            {showKeyInput ? (
+              <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                <label className="text-[9px] text-slate-300 font-extrabold uppercase tracking-wider block">Llave de Gemini API</label>
+                <input
+                  type="password"
+                  placeholder="Pegar clave AI..."
+                  value={clientApiKey}
+                  onChange={(e) => handleSaveApiKey(e.target.value)}
+                  className="w-full text-xs font-mono bg-slate-950 border border-slate-700/80 rounded p-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-400"
+                />
+                <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                  Su clave se guarda localmente en su propio explorador para habilitar el motor OCR real en GitHub Pages sin servidor remoto.
+                </p>
+                <button
+                  onClick={() => setShowKeyInput(false)}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold py-1 cursor-pointer transition-colors font-sans"
+                >
+                  Cerrar Configuración
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowKeyInput(true)}
+                className="w-full flex items-center justify-between p-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-lg text-[10px] font-bold text-slate-300 cursor-pointer transition-all font-sans"
+              >
+                <span className="flex items-center gap-1.5">🔑 Gemini API Key</span>
+                <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${clientApiKey ? "bg-emerald-950 text-emerald-400 border border-emerald-900" : "bg-indigo-950 text-indigo-400 border border-indigo-900"}`}>
+                  {clientApiKey ? "CONECTADA" : "CONFIGURAR"}
+                </span>
+              </button>
+            )}
+
+            <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1">
+              <div className="flex items-center justify-between">
+                <span>Ubicación base:</span>
+                <span>Rep. Dominicana</span>
+              </div>
+              <p className="text-[10px] text-slate-500 pt-1 text-center font-sans">
+                Diseño Premium SAP Partner
               </p>
-              <button
-                onClick={() => setShowKeyInput(false)}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold py-1 cursor-pointer transition-colors font-sans"
-              >
-                Cerrar Configuración
-              </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setShowKeyInput(true)}
-              className="w-full flex items-center justify-between p-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-lg text-[10px] font-bold text-slate-300 cursor-pointer transition-all font-sans"
-            >
-              <span className="flex items-center gap-1.5">🔑 Gemini API Key</span>
-              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${clientApiKey ? "bg-emerald-950 text-emerald-400 border border-emerald-900" : "bg-indigo-950 text-indigo-400 border border-indigo-900"}`}>
-                {clientApiKey ? "CONECTADA" : "CONFIGURAR"}
-              </span>
-            </button>
-          )}
-
-          <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Ubicación base:</span>
-              <span>Rep. Dominicana</span>
-            </div>
-            <p className="text-[10px] text-slate-500 pt-1 text-center font-sans">
-              Diseño Premium SAP Partner
-            </p>
           </div>
         </div>
       </aside>

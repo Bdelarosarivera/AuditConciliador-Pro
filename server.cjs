@@ -84,12 +84,13 @@ app.post("/api/process-pdf", async (req, res) => {
     let isScannedDetect = false;
     try {
       const ai = getGeminiClient();
-      const ocrPrompt = `Act\xFAa como un experto en OCR y auditor\xEDa de inventario. Examina este documento de inventario y extrae todos los art\xEDculos en forma de tabla.
+      const ocrPrompt = `Act\xFAa como un experto en OCR y auditor\xEDa de inventario. Examina este documento de inventario de principio a fin, analizando todas las p\xE1ginas.
 Por favor, aseg\xFArate de:
-1. Identificar columnas clave: C\xF3digo, Descripci\xF3n/Art\xEDculo, Unidad, Cantidad F\xEDsica (F\xEDsico), Stock Te\xF3rico (Te\xF3rico), Costo Unitario en RD$ (Costo), Familia/Categor\xEDa del Producto y Clasificaci\xF3n (si no est\xE1n, infiere la clasificaci\xF3n ABC bas\xE1ndote en que el tipo A son los m\xE1s caros/importantes, B intermedios y C los de menor valor).
-2. Limpiar espacios extra\xF1os, caracteres err\xF3neos, saltos de l\xEDnea e inconsistencias m\xE9tricas.
-3. Devolver un JSON bien estructurado que tenga un array de art\xEDculos.
-4. Identificar si el documento parece un escaneo/imagen (isScanned: true) o un PDF digital puro con texto seleccionable (isScanned: false).`;
+1. \xA1MUY IMPORTANTE!: Escanear, analizar y extraer los art\xEDculos de TODAS y cada una de las p\xE1ginas que componen el documento PDF de principio a fin. El documento puede ser multip\xE1ginas (varias p\xE1ginas escaneadas). No te limites solo a la primera p\xE1gina; recorre todas las tablas y secciones de todas las p\xE1ginas del archivo.
+2. Identificar columnas clave: C\xF3digo, Descripci\xF3n/Art\xEDculo, Unidad, Cantidad F\xEDsica (F\xEDsico), Stock Te\xF3rico (Te\xF3rico), Costo Unitario en RD$ (Costo), Familia/Categor\xEDa del Producto y Clasificaci\xF3n (si no est\xE1n, infiere la clasificaci\xF3n ABC bas\xE1ndote en que el tipo A son los m\xE1s caros/importantes, B intermedios y C los de menor valor).
+3. Limpiar espacios extra\xF1os, caracteres err\xF3neos, saltos de l\xEDnea e inconsistencias m\xE9tricas.
+4. Devolver un JSON bien estructurado que tenga un array de todos los art\xEDculos recopilados de todo el documento.
+5. Identificar si el documento parece un escaneo/imagen (isScanned: true) o un PDF digital puro con texto seleccionable (isScanned: false).`;
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: [

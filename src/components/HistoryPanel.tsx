@@ -21,6 +21,7 @@ import {
   PlayCircle
 } from "lucide-react";
 import { InventoryItem, AuditSummary, ExecutiveReport } from "../types";
+import PreviewModal from "./PreviewModal";
 
 interface HistoryPanelProps {
   onLoadAuditToDashboard: (
@@ -40,6 +41,12 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
   const [selectedAccuracyRange, setSelectedAccuracyRange] = useState("all");
   const [loadingAuditId, setLoadingAuditId] = useState<string | null>(null);
+
+  // Preview states
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewType, setPreviewType] = useState<"pdf" | "excel">("excel");
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [selectedAudit, setSelectedAudit] = useState<DBReviewAudit | null>(null);
 
   useEffect(() => {
     if (!currentUser) {
@@ -309,28 +316,34 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
 
                           {/* PDF link */}
                           {audit.pdfUrl && (
-                            <a
-                              href={audit.pdfUrl}
-                              target="_blank"
-                              rel="noreferrer referrer"
-                              className="p-1 px-2 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all"
-                              title="Descargar Acta PDF original cargada"
+                            <button
+                              onClick={() => {
+                                setSelectedAudit(audit);
+                                setPreviewType("pdf");
+                                setPreviewTitle(`Vista Previa Acta PDF: ${audit.auditName}`);
+                                setPreviewOpen(true);
+                              }}
+                              className="p-1 px-2 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                              title="Vista previa y descarga del Acta PDF"
                             >
                               <CloudDownload className="w-3.5 h-3.5" />
-                            </a>
+                            </button>
                           )}
 
                           {/* Excel link */}
                           {audit.excelUrl && (
-                            <a
-                              href={audit.excelUrl}
-                              target="_blank"
-                              rel="noreferrer referrer"
-                              className="p-1 px-2 border border-emerald-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
-                              title="Descargar Libro de Excel reconciliado"
+                            <button
+                              onClick={() => {
+                                setSelectedAudit(audit);
+                                setPreviewType("excel");
+                                setPreviewTitle(`Vista Previa Excel: ${audit.auditName}`);
+                                setPreviewOpen(true);
+                              }}
+                              className="p-1 px-2 border border-emerald-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
+                              title="Vista previa y descarga del Libro Excel"
                             >
                               <ArrowUpRight className="w-3.5 h-3.5" />
-                            </a>
+                            </button>
                           )}
 
                           {/* Delete button (Admin-only validation is verified by the rules) */}
@@ -356,6 +369,35 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
           </div>
         </div>
       )}
+
+      {/* Interactive History File Preview Modal */}
+      <PreviewModal
+        isOpen={previewOpen}
+        onClose={() => {
+          setPreviewOpen(false);
+          setSelectedAudit(null);
+        }}
+        type={previewType}
+        title={previewTitle}
+        auditId={selectedAudit?.id}
+        historicalAudit={selectedAudit}
+        onConfirmDownload={() => {
+          if (!selectedAudit) return;
+          const url = previewType === "excel" ? selectedAudit.excelUrl : selectedAudit.pdfUrl;
+          if (url && url !== "pending-storage-activation") {
+            const a = document.createElement("a");
+            a.href = url;
+            a.target = "_blank";
+            a.download = previewType === "excel" ? `${selectedAudit.auditName}_reconciliacion.xlsx` : `${selectedAudit.auditName}_acta.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            addToast(`Abriendo descarga oficial desde la nube segura...`, "success");
+          } else {
+            addToast(`El archivo solicitado no tiene una URL de respaldo válida asignada.`, "warning");
+          }
+        }}
+      />
     </div>
   );
 }

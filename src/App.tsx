@@ -30,6 +30,7 @@ import { InventoryItem, AuditSummary, ExecutiveReport, ProcessingState } from ".
 import KPICards from "./components/KPICards";
 import GaugeChart from "./components/GaugeChart";
 import ExecutiveReportPanel from "./components/ExecutiveReportPanel";
+import PreviewModal from "./components/PreviewModal";
 import InteractiveTable from "./components/InteractiveTable";
 import DemoPresets from "./components/DemoPresets";
 import { useAuth } from "./context/AuthContext";
@@ -78,6 +79,11 @@ export default function App() {
     setClientApiKey(key.trim());
     addToast(key ? "Clave API de Gemini guardada localmente." : "Clave API de Gemini eliminada.", "info");
   };
+
+  // Preview Modal States
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewType, setPreviewType] = useState<"pdf" | "excel">("excel");
+  const [previewTitle, setPreviewTitle] = useState("");
 
   // Time metrics check
   const [utcTime, setUtcTime] = useState("");
@@ -312,12 +318,13 @@ export default function App() {
             setProgressPercent(90);
             setProgressText("Estableciendo conexión segura con Google Gemini (Llave del Cliente)...");
             
-            const ocrPrompt = `Actúa como un experto en OCR y auditoría de inventario. Examina este documento de inventario y extrae todos los artículos en forma de tabla.
+            const ocrPrompt = `Actúa como un experto en OCR y auditoría de inventario. Examina este documento de inventario de principio a fin, analizando todas las páginas.
 Por favor, asegúrate de:
-1. Identificar columnas clave: Código, Descripción/Artículo, Unidad, Cantidad Física (Físico), Stock Teórico (Teórico), Costo Unitario en RD$ (Costo), Familia/Categoría del Producto y Clasificación (si no están, infiere la clasificación ABC basándote en que el tipo A son los más caros/importantes, B intermedios y C los de menor valor).
-2. Limpiar espacios extraños, caracteres erróneos, saltos de línea e inconsistencias métricas.
-3. Devolver un JSON bien estructurado que tenga un array de artículos.
-4. Identificar si el documento parece un escaneo/imagen (isScanned: true) o un PDF digital puro con texto seleccionable (isScanned: false).`;
+1. ¡MUY IMPORTANTE!: Escanear, analizar y extraer los artículos de TODAS y cada una de las páginas que componen el documento PDF de principio a fin. El documento puede ser multipáginas (varias páginas escaneadas). No te limites solo a la primera página; recorre todas las tablas y secciones de todas las páginas del archivo.
+2. Identificar columnas clave: Código, Descripción/Artículo, Unidad, Cantidad Física (Físico), Stock Teórico (Teórico), Costo Unitario en RD$ (Costo), Familia/Categoría del Producto y Clasificación (si no están, infiere la clasificación ABC basándote en que el tipo A son los más caros/importantes, B intermedios y C los de menor valor).
+3. Limpiar espacios extraños, caracteres erróneos, saltos de línea e inconsistencias métricas.
+4. Devolver un JSON bien estructurado que tenga un array de todos los artículos recopilados de todo el documento.
+5. Identificar si el documento parece un escaneo/imagen (isScanned: true) o un PDF digital puro con texto seleccionable (isScanned: false).`;
 
             let cleanedBase64 = base64Content;
             let mimeType = "application/pdf";
@@ -506,6 +513,7 @@ Por favor, asegúrate de:
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       handlePickedFile(e.target.files[0]);
+      e.target.value = ""; // Clear input value so same file name can be picked sequentially
     }
   };
 
@@ -1067,15 +1075,6 @@ Por favor, asegúrate de:
                         : "border-gray-200 bg-white hover:border-indigo-400 hover:shadow-xs"
                     }`}
                   >
-                    <input
-                      type="file"
-                      id="pdf-upload-file-picker"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      accept=".pdf,.csv,.txt"
-                      className="hidden"
-                    />
-
                     <div className="p-4 bg-slate-50 border group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-2xl text-slate-400 transition-colors">
                       <Upload className="w-10 h-10 stroke-[1.5]" />
                     </div>
@@ -1132,14 +1131,6 @@ Por favor, asegúrate de:
 
                 {/* Right control triggers */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept=".pdf,.csv,.txt"
-                    className="hidden"
-                  />
-                  
                   {/* Cargar PDF trigger */}
                   <button
                     onClick={onTriggerFilePicker}
@@ -1150,14 +1141,40 @@ Por favor, asegúrate de:
                     <span>Cargar Archivo</span>
                   </button>
 
-                  {/* Descargar Excel trigger */}
+                  {/* Descargar Excel trigger with Preview */}
                   <button
-                    onClick={handleDownloadExcel}
+                    onClick={() => {
+                      if (items.length === 0) {
+                        addToast("No hay registros auditados para previsualizar.", "error");
+                        return;
+                      }
+                      setPreviewType("excel");
+                      setPreviewTitle(`Libro de Excel: ${selectedFile?.name?.replace(".pdf", "")?.toUpperCase() || "RECONCILIACIÓN"}`);
+                      setPreviewOpen(true);
+                    }}
                     className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="Generar y descargar libro Excel de 4 hojas"
+                    title="Previsualizar y descargar libro Excel de 4 hojas"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Descargar Excel</span>
+                  </button>
+
+                  {/* Descargar PDF trigger with Preview */}
+                  <button
+                    onClick={() => {
+                      if (items.length === 0) {
+                        addToast("No existen SKUs cargados para compilar el acta PDF.", "error");
+                        return;
+                      }
+                      setPreviewType("pdf");
+                      setPreviewTitle(`Acta de Auditoría PDF: ${selectedFile?.name?.replace(".pdf", "")?.toUpperCase() || "ACTA_CONCILIACION"}`);
+                      setPreviewOpen(true);
+                    }}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Previsualizar y generar Acta de Auditoría en PDF"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Descargar PDF</span>
                   </button>
 
                   {/* Guardar en Firebase Cloud trigger */}
@@ -1369,6 +1386,32 @@ Por favor, asegúrate de:
 
         </main>
       </div>
+      {/* Absolute persistent file picker input bound to ref */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".pdf,.csv,.txt"
+        className="hidden"
+      />
+      {/* Interactive File Preview Modal */}
+      <PreviewModal
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        type={previewType}
+        title={previewTitle}
+        activeItems={items}
+        activeSummary={summary}
+        activeReport={report}
+        onConfirmDownload={() => {
+          if (previewType === "excel") {
+            handleDownloadExcel();
+          } else {
+            // For active PDF report, print layout can be triggered or we can alert
+            window.print();
+          }
+        }}
+      />
     </div>
   );
 }

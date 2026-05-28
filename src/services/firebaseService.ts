@@ -46,6 +46,7 @@ export interface DBExecutiveReport {
   executiveSummary: string;
   impactoEconomico: string;
   recomendaciones: string[];
+  recommendations?: string[];
 }
 
 /**
@@ -192,7 +193,8 @@ export async function saveExecutiveReportToCloud(
     generatedAt: timestampString,
     executiveSummary: report.resumenEjecutivo,
     impactoEconomico: report.impactoEconomico,
-    recomendaciones: report.recomendaciones
+    recomendaciones: report.recomendaciones,
+    recommendations: report.recomendaciones
   };
 
   const docRef = doc(db, "reports", reportId);
@@ -237,7 +239,18 @@ export function subscribeToReports(onUpdate: (reports: DBExecutiveReport[]) => v
     (snapshot) => {
       const list: DBExecutiveReport[] = [];
       snapshot.forEach((docSnap) => {
-        list.push({ ...docSnap.data() } as DBExecutiveReport);
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
+          auditId: data.auditId,
+          generatedBy: data.generatedBy,
+          generatedAt: data.generatedAt,
+          reportUrl: data.reportUrl,
+          executiveSummary: data.executiveSummary,
+          impactoEconomico: data.impactoEconomico || "",
+          recomendaciones: data.recomendaciones || data.recommendations || [],
+          recommendations: data.recommendations || data.recomendaciones || []
+        } as unknown as DBExecutiveReport);
       });
       onUpdate(list);
     },

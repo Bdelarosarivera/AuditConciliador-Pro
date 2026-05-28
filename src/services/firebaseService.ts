@@ -93,22 +93,37 @@ export async function saveAuditToCloud(
   // 1. Upload files to Storage if present with active grace fallbacks (CORS & missing container guards)
   if (pdfFileOrBlob) {
     try {
-      pdfUrl = await uploadToStorage(pdfFileOrBlob, "uploads/pdfs", `${auditId}_acta.pdf`);
+      const uploadWithTimeout = Promise.race([
+        uploadToStorage(pdfFileOrBlob, "uploads/pdfs", `${auditId}_acta.pdf`),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Timeout de conexión con Firebase Storage (5000ms).")), 5000))
+      ]);
+      pdfUrl = await uploadWithTimeout;
     } catch (err) {
-      console.warn("Firebase Storage PDF upload bypassed/failed (usually CORS or bucket not initialized):", err);
+      console.warn("Firebase Storage PDF upload bypassed/failed (usually CORS, bucket not initialized, or timeout):", err);
       pdfUrl = "pending-storage-activation";
     }
   }
   if (excelFileOrBlob) {
     try {
-      excelUrl = await uploadToStorage(excelFileOrBlob, "exports/excel", `${auditId}_reconciliacion.xlsx`);
+      const uploadWithTimeout = Promise.race([
+        uploadToStorage(excelFileOrBlob, "exports/excel", `${auditId}_reconciliacion.xlsx`),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Timeout de conexión con Firebase Storage (5000ms).")), 5000))
+      ]);
+      excelUrl = await uploadWithTimeout;
     } catch (err) {
-      console.warn("Firebase Storage Excel upload bypassed/failed (usually CORS or bucket not initialized):", err);
+      console.warn("Firebase Storage Excel upload bypassed/failed (usually CORS, bucket not initialized, or timeout):", err);
       excelUrl = "pending-storage-activation";
     }
   }
 
   const timestampString = new Date().toISOString();
+
+  // Helper sanitizer to completely avoid writing NaN or Infinity values to Firestore
+  const safeNum = (val: any, fallback = 0): number => {
+    if (val === undefined || val === null) return fallback;
+    const parsed = Number(val);
+    return isNaN(parsed) || !isFinite(parsed) ? fallback : parsed;
+  };
 
   // 2. Prepare Firestore document with robust Spanish fallbacks to satisfy 'isValidAudit' rules
   const cleanConfiabilidadNivel = (
@@ -119,31 +134,31 @@ export async function saveAuditToCloud(
 
   const auditHeader: DBReviewAudit = {
     id: auditId,
-    auditName: (auditName || "Acta de Conciliación Física").trim(),
-    uploadedBy: userId || "uid-anonimo",
-    uploadedByName: userName || "Auditor Autorizado",
+    auditName: (auditName || "Acta de Conciliación Física").trim().substring(0, 199),
+    uploadedBy: (userId || "uid-anonimo").toString().substring(0, 127),
+    uploadedByName: (userName || "Auditor Autorizado").toString().substring(0, 127),
     uploadedAt: timestampString,
     pdfUrl: pdfUrl || "",
     excelUrl: excelUrl || "",
-    totalItems: Number(items.length) || 0,
-    inventoryAccuracy: Number(summary?.exactitudMonto) || Number(summary?.confiabilidad) || 0,
-    differenceValue: Number(summary?.diferenciaNeta) || 0,
+    totalItems: safeNum(items.length, 0),
+    inventoryAccuracy: safeNum(summary?.exactitudMonto, safeNum(summary?.confiabilidad, 0)),
+    differenceValue: safeNum(summary?.diferenciaNeta, 0),
     status: "finalized",
-    processingTime: Number(processingTimeMs / 1000) || 3,
+    processingTime: safeNum(processingTimeMs / 1000, 3),
     warehouse: (warehouse || "Almacén Central RD").trim(),
     summary: {
-      totalArticulos: Number(summary?.totalArticulos) || Number(items.length) || 0,
-      conDiferencia: Number(summary?.conDiferencia) || Number(summary?.totalErrores) || 0,
-      sinDiferencia: Number(summary?.sinDiferencia) || 0,
-      diferenciasPositivas: Number(summary?.diferenciasPositivas) || 0,
-      diferenciasNegativas: Number(summary?.diferenciasNegativas) || 0,
-      diferenciaNeta: Number(summary?.diferenciaNeta) || 0,
-      valorTotalTeorico: Number(summary?.valorTotalTeorico) || 0,
-      valorTotalFisico: Number(summary?.valorTotalFisico) || 0,
-      confiabilidad: Number(summary?.confiabilidad) || 0,
-      exactitudMonto: Number(summary?.exactitudMonto) || Number(summary?.confiabilidad) || 0,
+      totalArticulos: safeNum(summary?.totalArticulos, safeNum(items.length, 0)),
+      conDiferencia: safeNum(summary?.conDiferencia, safeNum(summary?.totalErrores, 0)),
+      sinDiferencia: safeNum(summary?.sinDiferencia, 0),
+      diferenciasPositivas: safeNum(summary?.diferenciasPositivas, 0),
+      diferenciasNegativas: safeNum(summary?.diferenciasNegativas, 0),
+      diferenciaNeta: safeNum(summary?.diferenciaNeta, 0),
+      valorTotalTeorico: safeNum(summary?.valorTotalTeorico, 0),
+      valorTotalFisico: safeNum(summary?.valorTotalFisico, 0),
+      confiabilidad: safeNum(summary?.confiabilidad, 0),
+      exactitudMonto: safeNum(summary?.exactitudMonto, safeNum(summary?.confiabilidad, 0)),
       confiabilidadNivel: cleanConfiabilidadNivel,
-      totalErrores: Number(summary?.totalErrores) || Number(summary?.conDiferencia) || 0,
+      totalErrores: safeNum(summary?.totalErrores, safeNum(summary?.conDiferencia, 0)),
     },
     createdAt: timestampString
   };
@@ -170,14 +185,14 @@ export async function saveAuditToCloud(
       const itemId = `item-${globalIdx + 1}`;
       const itemDocRef = doc(itemsCollectionRef, itemId);
       
-      const cleanCode = (item.codigo || `SKU-${1000 + globalIdx}`).toString().trim();
+      const cleanCode = (item.codigo || `SKU-${1000 + globalIdx}`).toString().trim().substring(0, 99);
       const cleanDescription = (item.descripcion || `Artículo Descriptor ${globalIdx + 1}`).toString().trim().substring(0, 499);
       const cleanClassification = (["A", "B", "C"].includes(item.clasificacion) ? item.clasificacion : "B") as "A" | "B" | "C";
-      const cleanPhysical = Number(item.fisico) || 0;
-      const cleanTheoretical = Number(item.teorico) || 0;
-      const cleanDifference = Number(item.diferencia) ?? (cleanPhysical - cleanTheoretical);
-      const cleanCost = Number(item.costo) || 0;
-      const cleanDifferenceRD = Number(item.diferenciaRD) ?? (cleanDifference * cleanCost);
+      const cleanPhysical = safeNum(item.fisico, 0);
+      const cleanTheoretical = safeNum(item.teorico, 0);
+      const cleanDifference = safeNum(item.diferencia, cleanPhysical - cleanTheoretical);
+      const cleanCost = safeNum(item.costo, 0);
+      const cleanDifferenceRD = safeNum(item.diferenciaRD, cleanDifference * cleanCost);
 
       // We matches exactly the physical structure mandatory per 'isValidInventoryItem' in rules
       batch.set(itemDocRef, {

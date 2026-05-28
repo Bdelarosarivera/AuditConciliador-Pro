@@ -140,8 +140,7 @@ export default function App() {
       // decode base64 file blob if from PDF upload
       let pdfBlob: Blob | null = null;
       if (currentFileBase64 && currentFileBase64.startsWith("data:")) {
-        const res = await fetch(currentFileBase64);
-        pdfBlob = await res.blob();
+        pdfBlob = base64ToBlob(currentFileBase64);
       }
 
       const auditTitle = selectedFile?.name || "Acta de Reconciliación Física";
@@ -163,6 +162,14 @@ export default function App() {
       }
 
       addToast(`Sincronizado! Se creó la auditoría: "${auditTitle}" en Firestore con éxito.`, "success");
+      setSavingToCloud(false);
+      
+      // Clean up browser file input and base64 caches so subsequent/multiple loads are totally fresh
+      setCurrentFileBase64(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      
       setActiveTab("history"); // Move them to history so they see their cloud rows instantly!
     } catch (error: any) {
       console.error(error);
@@ -1184,7 +1191,7 @@ Por favor, asegúrate de:
                     className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                     title="Guardar arqueo de inventario y documentos originales en Firebase Cloud"
                   >
-                    <CloudUpload className="w-3.5 h-3.5 animate-pulse" />
+                    <CloudUpload className={`w-3.5 h-3.5 ${savingToCloud ? "animate-pulse" : ""}`} />
                     <span>{savingToCloud ? "Sincronizando..." : "Guardar en la Nube"}</span>
                   </button>
 
@@ -1418,6 +1425,24 @@ Por favor, asegúrate de:
 
 // Utility Sleep helper
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Robust synchronous Base64-to-Blob converter to prevent Chrome/Safari storage URI/Fetch size limits
+function base64ToBlob(base64: string, defaultType = "application/pdf"): Blob {
+  try {
+    const parts = base64.split(";base64,");
+    const contentType = parts[0]?.split(":")[1] || defaultType;
+    const raw = window.atob(parts[1] || base64);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  } catch (e) {
+    console.error("Fallo de conversión base64ToBlob:", e);
+    return new Blob([], { type: defaultType });
+  }
+}
 
 // Mirror/Replicate backend calculations on client cell adjustments dynamically to keep client reactive
 function calculateSummaryMetrics(items: InventoryItem[]): AuditSummary {

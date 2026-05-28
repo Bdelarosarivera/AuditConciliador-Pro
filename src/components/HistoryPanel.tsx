@@ -381,10 +381,10 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
         title={previewTitle}
         auditId={selectedAudit?.id}
         historicalAudit={selectedAudit}
-        onConfirmDownload={() => {
+        onConfirmDownload={async (downloadedItems, currentSummary, currentReport) => {
           if (!selectedAudit) return;
           const url = previewType === "excel" ? selectedAudit.excelUrl : selectedAudit.pdfUrl;
-          if (url && url !== "pending-storage-activation") {
+          if (url && url !== "pending-storage-activation" && url !== "") {
             const a = document.createElement("a");
             a.href = url;
             a.target = "_blank";
@@ -394,7 +394,88 @@ export default function HistoryPanel({ onLoadAuditToDashboard, addToast }: Histo
             document.body.removeChild(a);
             addToast(`Abriendo descarga oficial desde la nube segura...`, "success");
           } else {
-            addToast(`El archivo solicitado no tiene una URL de respaldo válida asignada.`, "warning");
+            // Fallback dynamically since storage upload is un-configured or blocked by CORS
+            if (previewType === "excel") {
+              const exportItems = downloadedItems && downloadedItems.length > 0 ? downloadedItems : [];
+              if (exportItems.length === 0) {
+                addToast(`No hay ítems cargados aún para generar el archivo local. Espere a que cargue la lista o vuelva a intentarlo.`, "warning");
+                return;
+              }
+              addToast(`Generando copia de respaldo local de Excel...`, "info");
+              try {
+                const response = await fetch("/api/export-excel", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    items: exportItems,
+                    summary: currentSummary || selectedAudit.summary || null,
+                    report: currentReport || null,
+                    title: selectedAudit.auditName?.toUpperCase() || "RECONCILIACIÓN",
+                  }),
+                });
+
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const blobUrl = window.URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = blobUrl;
+                  a.download = `CONCILIACION_INVENTARIO_${selectedAudit.auditName || "REPORTE"}.xlsx`;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(blobUrl);
+                  document.body.removeChild(a);
+                  addToast(`Libro Excel de respaldo generado y descargado correctamente.`, "success");
+                  return;
+                }
+              } catch (err) {
+                console.warn("Fallo en exportación Excel del servidor de respaldo, intentando CSV local...", err);
+              }
+
+              // Fallback to local CSV
+              try {
+                let csvContent = "\uFEFF"; // UTF-8 BOM
+                csvContent += "CONCILIACIÓN DE INVENTARIO - AUDITCONCILIADOR PRO\n";
+                csvContent += `Documento:;${selectedAudit.auditName || "RECONCILIACIÓN"}\n`;
+                csvContent += `Fecha:;${new Date(selectedAudit.uploadedAt).toLocaleDateString("es-DO")}\n\n`;
+                
+                const s = currentSummary || selectedAudit.summary;
+                if (s) {
+                  csvContent += "Métricas Generales;Valor\n";
+                  csvContent += `Total de Artículos;${s.totalArticulos}\n`;
+                  csvContent += `Confiabilidad del Stock;${s.confiabilidad}%\n`;
+                  csvContent += `Nivel de Confiabilidad;${s.confiabilidadNivel}\n`;
+                  csvContent += `Exactitud por Monto;${s.exactitudMonto}%\n`;
+                  csvContent += `Diferencia Financiera Neta;RD$ ${s.diferenciaNeta}\n`;
+                  csvContent += `Excedentes (Diferencias +);RD$ ${s.diferenciasPositivas}\n`;
+                  csvContent += `Faltantes (Diferencias -);RD$ ${s.diferenciasNegativas}\n`;
+                  csvContent += `Valor Total Teórico;RD$ ${s.valorTotalTeorico}\n`;
+                  csvContent += `Valor Total Físico;RD$ ${s.valorTotalFisico}\n\n`;
+                }
+                
+                csvContent += "Código;Descripción;Familia;Clasificación;Unidad;Costo;Físico;Teorico;Diferencia;Diferencia RD$\n";
+                
+                exportItems.forEach((item) => {
+                  csvContent += `"${item.codigo}";"${item.descripcion.replace(/"/g, '""')}";"${item.familia}";"${item.clasificacion}";"${item.unidad}";${item.costo};${item.fisico};${item.teorico};${item.diferencia};${item.diferenciaRD}\n`;
+                });
+                
+                const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `CONCILIACION_INVENTARIO_${selectedAudit.auditName || "REPORTE"}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                URL.revokeObjectURL(blobUrl);
+                document.body.removeChild(a);
+                addToast("Copia CSV de respaldo descargada con éxito.", "success");
+              } catch (fallbackErr: any) {
+                addToast(`Error generando CSV local: ${fallbackErr.message}`, "error");
+              }
+            } else {
+              // PDF download fallback -> browser print system
+              addToast(`Lanzando menú de impresión inteligente. Use "Guardar como PDF" como respaldo local alternativo.`, "info");
+              window.print();
+            }
           }
         }}
       />

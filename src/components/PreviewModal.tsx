@@ -33,7 +33,7 @@ interface PreviewModalProps {
   activeReport?: ExecutiveReport | null;
   // Fallbacks for historical audits if not loaded
   historicalAudit?: any;
-  onConfirmDownload: () => void;
+  onConfirmDownload: (items?: InventoryItem[], summary?: AuditSummary | null, report?: ExecutiveReport | null) => void;
 }
 
 export default function PreviewModal({
@@ -803,7 +803,7 @@ export default function PreviewModal({
 
             <button
               onClick={() => {
-                onConfirmDownload();
+                onConfirmDownload(items, summary, report);
                 onClose();
               }}
               className={`px-5 py-2.5 ${isExcel ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"} text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md hover:scale-[1.01] transition-all cursor-pointer`}
